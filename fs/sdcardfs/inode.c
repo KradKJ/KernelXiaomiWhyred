@@ -80,7 +80,7 @@ static int sdcardfs_create(struct inode *dir, struct dentry *dentry,
 					SDCARDFS_I(dir)->data);
 	if (!saved_cred)
 		return -ENOMEM;
-
+		
 	sdcardfs_get_lower_path(dentry, &lower_path);
 	lower_dentry = lower_path.dentry;
 	lower_dentry_mnt = lower_path.mnt;
@@ -329,7 +329,6 @@ out:
 	task_lock(current);
 	current->fs = saved_fs;
 	task_unlock(current);
-
 	free_fs_struct(copied_fs);
 out_unlock:
 	sdcardfs_put_lower_path(dentry, &lower_path);
