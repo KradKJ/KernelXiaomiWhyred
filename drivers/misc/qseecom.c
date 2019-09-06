@@ -1,6 +1,6 @@
 /*Qualcomm Secure Execution Environment Communicator (QSEECOM) driver
  *
- * Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1676,6 +1676,23 @@ static void __qseecom_clean_listener_sglistinfo(
 	}
 }
 
+/* wake up listener receive request wq retry delay (ms) and max attemp count */
+#define QSEECOM_WAKE_LISTENER_RCVWQ_DELAY          10
+#define QSEECOM_WAKE_LISTENER_RCVWQ_MAX_ATTEMP     3
+
+static int __qseecom_retry_wake_up_listener_rcv_wq(
+	struct qseecom_registered_listener_list *ptr_svc)
+{
+	int retry = 0;
+
+	while (ptr_svc->rcv_req_flag == 1 &&
+			 retry++ < QSEECOM_WAKE_LISTENER_RCVWQ_MAX_ATTEMP) {
+		wake_up_interruptible(&ptr_svc->rcv_req_wq);
+		msleep(QSEECOM_WAKE_LISTENER_RCVWQ_DELAY);
+	}
+	return ptr_svc->rcv_req_flag == 1;
+}
+
 static int __qseecom_process_incomplete_cmd(struct qseecom_dev_handle *data,
 					struct qseecom_command_scm_resp *resp)
 {
@@ -2016,6 +2033,13 @@ static int __qseecom_reentrancy_process_incomplete_cmd(
 			return -ERESTARTSYS;
 		}
 		pr_debug("waking up rcv_req_wq and waiting for send_resp_wq\n");
+		if ((ptr_svc->rcv_req_flag == 1) &&
+			(__qseecom_retry_wake_up_listener_rcv_wq(ptr_svc))) {
+			pr_err("Service %d is not ready to rcv req\n", lstnr);
+			__qseecom_qseos_fail_return_resp_tz(data, resp,
+					&send_data_rsp, NULL, lstnr);
+			return -EINVAL;
+		}
 
 		/* initialize the new signal mask with all signals*/
 		sigfillset(&new_sigset);
@@ -8743,11 +8767,11 @@ static int qseecom_remove(struct platform_device *pdev)
 		&qseecom.registered_kclient_list_head, list) {
 
 		/* Break the loop if client handle is NULL */
-		if (!kclient->handle)
-			goto exit_free_kclient;
-
-		if (list_empty(&kclient->list))
-			goto exit_free_kc_handle;
+		if (!kclient->handle) {
+			list_del(&kclient->list);
+			kzfree(kclient);
+			break;
+		}
 
 		list_del(&kclient->list);
 		mutex_lock(&app_access_lock);
@@ -8759,11 +8783,6 @@ static int qseecom_remove(struct platform_device *pdev)
 			kzfree(kclient);
 		}
 	}
-
-exit_free_kc_handle:
-	kzfree(kclient->handle);
-exit_free_kclient:
-	kzfree(kclient);
 
 	spin_unlock_irqrestore(&qseecom.registered_kclient_list_lock, flags);
 
