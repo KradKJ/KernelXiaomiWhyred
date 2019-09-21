@@ -32,3 +32,4 @@ obj-y				+= fingerprint/
 
 obj-$(CONFIG_INPUT_HALL_SENSOR)	+= hall.o
 obj-$(CONFIG_INPUT_HALL_SENSOR_E7S)	+= hall_e7s.o
+obj-y   += sensors/bmi160/
